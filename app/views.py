@@ -5,8 +5,11 @@ Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file creates your application.
 """
 
-from app import app
+from app import app, db
 from flask import render_template, request, jsonify, send_file
+from app.forms import MovieForm
+from app.models import Movie
+from flask_wtf.csrf import generate_csrf
 import os
 
 
@@ -22,6 +25,41 @@ def index():
 ###
 # The functions below should be applicable to all Flask apps.
 ###
+
+@app.route('/api/v1/movies', methods=['POST'])
+def movies():
+    form = MovieForm()
+    if form.validate_on_submit():
+        title = form.title.data
+        description = form.description.data
+        poster = form.poster.data
+
+        # Save the file to uploads folder
+        uploads_folder = app.config['UPLOAD_FOLDER']
+        if not os.path.exists(uploads_folder):
+            os.makedirs(uploads_folder)
+
+        filename = poster.filename
+        poster.save(os.path.join(uploads_folder, filename))
+
+        # Save to database
+        movie = Movie(title=title, description=description, poster=filename)
+        db.session.add(movie)
+        db.session.commit()
+
+        return jsonify({
+            "message": "Movie Successfully added",
+            "title": title,
+            "poster": filename,
+            "description": description
+        }), 201
+    else:
+        errors = form_errors(form)
+        return jsonify({"errors": errors}), 400
+
+@app.route('/api/v1/csrf-token', methods=['GET'])
+def get_csrf():
+    return jsonify({'csrf_token': generate_csrf()})
 
 # Here we define a function to collect form errors from Flask-WTF
 # which we can later use
@@ -61,3 +99,22 @@ def add_header(response):
 def page_not_found(error):
     """Custom 404 page."""
     return render_template('404.html'), 404
+
+
+@app.route('/api/v1/movies', methods=['GET'])
+def get_movies():
+    movies = db.session.execute(db.select(Movie)).scalars().all()
+    movie_list = []
+    for movie in movies:
+        movie_list.append({
+            "id": movie.id,
+            "title": movie.title,
+            "description": movie.description,
+            "poster": f"/api/v1/posters/{movie.poster}"
+        })
+    return jsonify({"movies": movie_list})
+
+@app.route('/api/v1/posters/<filename>', methods=['GET'])
+def get_poster(filename):
+    uploads_folder = os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER'])
+    return send_file(os.path.join(uploads_folder, filename))

@@ -1,5 +1,4 @@
-# Add any model classes for Flask-SQLAlchemy here
-from . import db
+from app import db
 from datetime import datetime
 
 class Movie(db.Model):
